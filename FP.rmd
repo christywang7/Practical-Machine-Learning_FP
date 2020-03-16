@@ -1,0 +1,159 @@
+---
+title: "Peer-graded Assignment:Prediction Assignmetn Writeup"
+author: "Christy_Wang"
+date: "3/15/2020"
+output:
+  html_document: default
+pdf_document: default
+---
+  
+## Background 
+     Using devices such as Jawbone Up, Nike FuelBand, and Fitbit it is now possible to collect a large amount of data about personal activity relatively inexpensively. These type of devices are part of the quantified self movement – a group of enthusiasts who take measurements about themselves regularly to improve their health, to find patterns in their behavior, or because they are tech geeks. One thing that people regularly do is quantify how much of a particular activity they do, but they rarely quantify how well they do it. In this project, your goal will be to use data from accelerometers on the belt, forearm, arm, and dumbell of 6 participants. They were asked to perform barbell lifts correctly and incorrectly in 5 different ways. 
+
+## Goals of the Project 
+To predict the manner in which they did the exercise. 
+
+**0.Environment preparation**
+  
+```{r, cache = T, warning=FALSE}
+# set working directory
+setwd("~/Desktop/R learning /Coursera")
+
+# Load the required packages
+library(caret)
+library(rattle)
+library(rpart)
+library(rpart.plot)
+library(ggplot2)
+library(randomForest)
+library(rattle)
+library(reshape2)
+# import the data
+training <- read.csv("pml-training.csv", na.strings = c("NA", " "))
+testing <- read.csv("pml-testing.csv", na.strings = c("NA", " "))
+```
+*The training set has `r nrow(training)` observations and `r ncol(training)` variables, and the testing dataset has `r nrow(testing)` observations and `r ncol(testing)` variables.*
+  
+**1. Data wrangling**
+  
+*1.1 check missing data--delete the variables with >= 80% of the missing data *
+```{r, cache = T, results='hide'}
+is.na(training)
+colSums(is.na(training))
+missingcol <- c()
+for ( i in 1: ncol(training)) {
+  pro_missing <- sum(is.na(training[i]))/nrow(training)
+  
+  if (pro_missing >= 0.8){
+    missingcol <- c(missingcol, i)
+  }
+}
+summary(missingcol)
+newtraining <- training[-missingcol]
+```
+
+*After removing the variables with a lot of missing data, we now have `r ncol(newtraining)` variables left and remains `r nrow(newtraining)`rows*
+  
+*1.2 Remove the variables with no variability*
+```{r, cache = T}
+novar <- nearZeroVar(newtraining)
+newtraining_1 <- newtraining[-novar]
+```
+
+*`r ncol(newtraining_1)` varibles left and remains `r nrow(newtraining_1) row*
+  
+*1.3 Remove the identificartion variables*
+
+```{r, cache = T}
+newtraining_2 <- newtraining_1[-(1:5)]
+```
+
+*After the data cleaning steps, I have `r ncol(newtraining_2)` variables and `r nrow(newtraining_2)` observations.* 
+  
+**2. Data spliting**
+  
+*In order to get out-of-sample errors, I split the cleaned training set into a training set with 70% proportion, and the 30% for computing the out-of-sample errors*
+
+```{r, cache = T}
+set.seed(123)
+
+inTrain <- createDataPartition(y=newtraining_2$classe, p=0.7, list=FALSE)
+newtraining_2_train <- newtraining_2[inTrain,]
+newtraining_2_test <- newtraining_2[-inTrain,]
+```
+
+**3. Exploratory Analysis**
+  
+*Check the correlation among variables*
+  
+```{r,echo=FALSE}
+library(reshape2)
+cor <- cor(newtraining_2_train[,-54])
+melted_cormat <- melt(cor)
+ggplot(data=melted_cormat, aes(x=Var1, y=Var2, fill=value))+
+  geom_tile(color="white")+
+  scale_fill_gradient2(low = "blue", high ="darkred", mid="white", midpoint =0) +
+  theme_minimal()+
+  theme(axis.text.x = element_text(angle=45,hjust=1))
+```
+
+*Accoring to the plot, there are some variables having stronger correlations than that with others. A Principle Component Analysis can be utilized to reduce the number of variables.(However, after the attempts of running with PCA, it will take too long to process data. Therefore, I turned to other methods)*
+  
+**4. Prediction Model Selection**
+  
+*4.1 random forest*
+
+```{r, cache=TRUE}
+control <- trainControl(method = "cv", number=5)
+modFit.rf <- train(classe ~., data=newtraining_2_train, method="rf", trControl=control)
+modFit.rf
+```
+
+*4.2 Decision Tree*
+
+```{r, cache = T}
+set.seed(123)
+control <- trainControl(method="cv", number=5) 
+fit_rpart <- train(classe ~ ., data=newtraining_2_train, method="rpart", trControl= control)
+print(fit_rpart)
+fancyRpartPlot(fit_rpart$finalModel)
+```
+
+*4.3 Support Vector Machine*
+
+```{r, cache=TRUE, warning=FALSE}
+newtraining_2_train$classe <- as.factor(newtraining_2_train$classe)
+library(e1071)
+svmfit <- svm(classe~., data=newtraining_2_train, kernel="radial")
+```
+
+**Model Comparison**
+  
+*4.1 Random Forest*
+```{r, cache=FALSE}
+testrf <- predict(modFit.rf, newtraining_2_test[,-54])
+confu.rf <- confusionMatrix(newtraining_2_test$classe,testrf)
+confu.rf
+```
+*4.2 Decision Tree*
+```{r, cache=FALSE}
+testdt <- predict(fit_rpart, newtraining_2_test[,-54])
+confu.dt <- confusionMatrix(newtraining_2_test$classe, testdt)
+confu.dt
+```
+*4.3 Support Vector Machine*
+```{r, cache=FALSE}
+svmPred <- predict(svmfit, newtraining_2_test[,-54])
+confu.svm <- confusionMatrix(newtraining_2_test$classe,svmPred)
+confu.svm
+```
+
+**5. Prediction on Testing set**
+*Based on the results from the above models, Random Forest has the best performance with accuracy rate 99.9% on tested-training set (Decision tree: 56.9%, Support Vectir Machine: 94.5% ). So I will use Random Forest on the test set and estimated that I will get 0.1% of error rate.*
+```{r}
+predictest<- predict(modFit.rf, testing)
+predictest
+```
+**The End**                        
+  
+  
